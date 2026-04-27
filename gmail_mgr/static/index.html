@@ -240,6 +240,9 @@
     <button class="nav-item" data-query="in:spam" data-title="Spam">
       <span>Spam</span><span class="count" data-count="spam"></span>
     </button>
+    <button class="nav-item" data-view="subs" data-title="Subscriptions">
+      <span>Subscriptions</span><span class="count"></span>
+    </button>
   </div>
 
   <div class="nav-group">
@@ -261,6 +264,14 @@
     <div class="custom-query">
       <input type="text" id="sender-filter" placeholder='Filter senders…' oninput="filterSenders()" />
     </div>
+    <select id="group-select" onchange="rescan()" title="Group by sender or domain" style="padding:6px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;font-family:inherit;background:var(--card)">
+      <option value="address">By sender</option>
+      <option value="domain">By domain</option>
+    </select>
+    <select id="metric-select" onchange="rescan()" title="Rank by count or size" style="padding:6px 8px;font-size:13px;border:1px solid var(--border);border-radius:6px;font-family:inherit;background:var(--card)">
+      <option value="count">By count</option>
+      <option value="size">By size</option>
+    </select>
     <button onclick="rescan()" title="Re-fetch (bypasses cache)">Refresh</button>
     <button onclick="selectAllVisible()">Select all</button>
     <button onclick="selectNone()">Select none</button>
@@ -275,6 +286,10 @@
   <span class="count-pill" id="action-count">0 selected</span>
   <button class="btn-unsub" onclick="bulkUnsub()">Unsubscribe</button>
   <button class="btn-trash" onclick="bulkTrash()">Move to trash</button>
+  <button class="btn-cancel" onclick="bulkArchive()" style="background:rgba(255,255,255,0.12);color:white">Archive</button>
+  <button class="btn-cancel" onclick="bulkMarkRead()" style="background:rgba(255,255,255,0.12);color:white">Mark read</button>
+  <button class="btn-cancel" onclick="bulkBlock()" style="background:rgba(255,255,255,0.12);color:white">Block</button>
+  <button class="btn-cancel" onclick="bulkRestore()" id="btn-bulk-restore" style="background:rgba(255,255,255,0.12);color:white;display:none">Restore</button>
   <button class="btn-cancel" onclick="selectNone()">Cancel</button>
 </div>
 
@@ -282,6 +297,9 @@
   <div class="modal">
     <div class="modal-title" id="modal-title"></div>
     <div class="modal-body" id="modal-body"></div>
+    <label id="modal-extra" style="display:none;align-items:center;gap:8px;font-size:13px;color:var(--text-2);margin-bottom:14px;cursor:pointer">
+      <input type="checkbox" id="modal-extra-check"> <span id="modal-extra-label"></span>
+    </label>
     <div class="modal-actions">
       <button onclick="resolveModal(false)">Cancel</button>
       <button class="primary" id="modal-confirm" onclick="resolveModal(true)">Confirm</button>
@@ -304,6 +322,14 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
 }
 
+function fmtBytes(n) {
+  n = +n || 0;
+  if (n < 1024) return n + " B";
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+  return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+}
+
 function toast(msg, kind = "success") {
   const el = $("#toast");
   el.className = "toast show " + kind;
@@ -312,15 +338,25 @@ function toast(msg, kind = "success") {
   toastTimer = setTimeout(() => el.classList.remove("show"), 5000);
 }
 
-function confirmModal(title, body, danger = false, confirmText = "Confirm") {
+function confirmModal(title, body, danger = false, confirmText = "Confirm", extra = null) {
   return new Promise((resolve) => {
     $("#modal-title").textContent = title;
     $("#modal-body").textContent = body;
     const btn = $("#modal-confirm");
     btn.textContent = confirmText;
     btn.className = danger ? "danger" : "primary";
+    const wrap = $("#modal-extra");
+    const chk = $("#modal-extra-check");
+    if (extra) {
+      $("#modal-extra-label").textContent = extra.label;
+      chk.checked = !!extra.defaultChecked;
+      wrap.style.display = "flex";
+    } else {
+      wrap.style.display = "none";
+      chk.checked = false;
+    }
     $("#modal-backdrop").classList.add("show");
-    modalResolver = resolve;
+    modalResolver = (ok) => resolve({ ok, extra: chk.checked });
   });
 }
 
@@ -365,9 +401,14 @@ async function scan() {
   $("#view-meta").textContent = "";
   const f = $("#sender-filter"); if (f) f.value = "";
   selectNone();
+  const isTrash = currentQuery === "in:trash";
+  $("#btn-bulk-restore").style.display = isTrash ? "" : "none";
+
+  const group = $("#group-select").value;
+  const metric = $("#metric-select").value;
 
   try {
-    const url = `/api/senders?query=${encodeURIComponent(currentQuery)}&top=300`;
+    const url = `/api/senders?query=${encodeURIComponent(currentQuery)}&top=300&group=${group}&metric=${metric}`;
     const data = await (await fetch(url)).json();
 
     if (!data.senders || !data.senders.length) {
@@ -376,35 +417,85 @@ async function scan() {
       return;
     }
 
-    const baseMeta = `${data.scanned.toLocaleString()} messages · ${data.unique} unique senders${data.cached ? " · cached" : ""}`;
+    const groupLabel = data.group === "domain" ? "domains" : "senders";
+    const baseMeta = `${data.scanned.toLocaleString()} messages · ${data.unique} unique ${groupLabel}${data.cached ? " · cached" : ""}`;
     $("#view-meta").textContent = baseMeta;
     $("#view-meta").dataset.base = baseMeta;
+    const valHeader = metric === "size" ? "Size" : "Count";
     content.innerHTML = `
       <table>
         <thead>
           <tr>
             <th class="col-check"><input type="checkbox" onclick="toggleAll(this)" id="header-check"></th>
             <th class="col-rank">#</th>
-            <th class="col-count">Count</th>
-            <th>Sender</th>
-            <th>Name</th>
+            <th class="col-count">${valHeader}</th>
+            <th>${data.group === "domain" ? "Domain" : "Sender"}</th>
+            <th>${data.group === "domain" ? "Addresses" : "Name"}</th>
             <th class="col-actions">Actions</th>
           </tr>
         </thead>
         <tbody>
-          ${data.senders.map((s, i) => `
-            <tr data-sender="${escapeHtml(s.address)}" data-count="${s.count}">
-              <td class="col-check"><input type="checkbox" class="row-check" onchange="updateActionBar()"></td>
-              <td class="col-rank">${i + 1}</td>
-              <td class="col-count">${s.count}</td>
-              <td>${escapeHtml(s.address)}</td>
-              <td style="color:var(--text-3)">${escapeHtml(s.name)}</td>
-              <td>
-                <div class="row-actions">
-                  <button onclick="oneUnsub('${encodeURIComponent(s.address)}')">Unsub</button>
-                  <button class="danger" onclick="oneTrash('${encodeURIComponent(s.address)}', ${s.count})">Trash</button>
-                </div>
-              </td>
+          ${data.senders.map((s, i) => {
+            const valCell = metric === "size" ? fmtBytes(s.bytes) : s.count.toLocaleString();
+            const detailCell = data.group === "domain"
+              ? `<span style="color:var(--text-3)" title="${escapeHtml(s.addresses.join(', '))}">${s.addresses.length} address${s.addresses.length === 1 ? '' : 'es'}</span>`
+              : `<span style="color:var(--text-3)">${escapeHtml(s.name)}</span>`;
+            return `
+              <tr data-sender="${escapeHtml(s.address)}" data-count="${s.count}" data-bytes="${s.bytes}">
+                <td class="col-check"><input type="checkbox" class="row-check" onchange="updateActionBar()"></td>
+                <td class="col-rank">${i + 1}</td>
+                <td class="col-count">${valCell}</td>
+                <td>${escapeHtml(s.address)}</td>
+                <td>${detailCell}</td>
+                <td>
+                  <div class="row-actions">
+                    <button onclick="oneUnsub('${encodeURIComponent(s.address)}')">Unsub</button>
+                    <button class="danger" onclick="oneTrash('${encodeURIComponent(s.address)}', ${s.count})">Trash</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+async function loadSubs() {
+  const content = $("#content");
+  content.innerHTML = `<div class="loading-state"><span class="spinner"></span>Loading subscription registry…</div>`;
+  $("#view-meta").textContent = "";
+  selectNone();
+  $("#btn-bulk-restore").style.display = "none";
+  try {
+    const data = await (await fetch("/api/subs?limit=1000")).json();
+    const rows = data.subs || [];
+    if (!rows.length) {
+      content.innerHTML = `<div class="empty-state">No senders tracked yet — scan an inbox view first.</div>`;
+      return;
+    }
+    const stats = data.stats || {};
+    const statLine = Object.entries(stats).map(([k, v]) => `${k}: ${v.senders}`).join(" · ") || "no stats yet";
+    $("#view-meta").textContent = `${rows.length} senders · ${statLine}`;
+    content.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Address</th><th>Status</th><th>Domain</th>
+            <th class="col-count">Msgs</th><th>Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr>
+              <td>${escapeHtml(r.address)}</td>
+              <td><span style="font-size:11px;text-transform:uppercase;color:var(--text-3)">${escapeHtml(r.status)}</span></td>
+              <td style="color:var(--text-3)">${escapeHtml(r.domain)}</td>
+              <td class="col-count">${(r.message_count || 0).toLocaleString()}</td>
+              <td style="color:var(--text-3)">${new Date((r.last_seen || 0) * 1000).toLocaleDateString()}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -494,7 +585,7 @@ function updateActionBar() {
 // Per-row actions
 async function oneUnsub(senderEnc) {
   const sender = decodeURIComponent(senderEnc);
-  const ok = await confirmModal("Unsubscribe", `Send an unsubscribe request to ${sender}?`, false, "Unsubscribe");
+  const { ok } = await confirmModal("Unsubscribe", `Send an unsubscribe request to ${sender}?`, false, "Unsubscribe");
   if (!ok) return;
   toast(`Unsubscribing from ${sender}…`);
   try {
@@ -509,13 +600,20 @@ async function oneUnsub(senderEnc) {
 
 async function oneTrash(senderEnc, count) {
   const sender = decodeURIComponent(senderEnc);
-  const ok = await confirmModal("Move to trash", `Move all ${count} messages from ${sender} to trash?\n\nRecoverable from Trash for 30 days.`, true, "Move to trash");
+  const { ok, extra: block } = await confirmModal(
+    "Move to trash",
+    `Move all ${count} messages from ${sender} to trash?\n\nRecoverable from Trash for 30 days.`,
+    true, "Move to trash",
+    { label: "Also block future mail (Gmail filter auto-trashes)", defaultChecked: false }
+  );
   if (!ok) return;
   toast(`Trashing ${count} messages…`);
   try {
-    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders: [sender] }) });
+    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders: [sender], block }) });
     const data = await r.json();
-    toast(`Trashed ${data.trashed} messages from ${sender}.`, "success");
+    let msg = `Trashed ${data.trashed} messages from ${sender}.`;
+    if (block && data.blocked) msg += ` Blocked ${data.blocked} sender${data.blocked === 1 ? '' : 's'}.`;
+    toast(msg, "success");
     rescan();
   } catch (e) { toast(`Error: ${e.message}`, "error"); }
 }
@@ -525,7 +623,7 @@ async function bulkUnsub() {
   const sel = getSelected();
   if (!sel.length) return;
   const senders = sel.map(s => s.sender);
-  const ok = await confirmModal(
+  const { ok } = await confirmModal(
     "Unsubscribe in bulk",
     `Send unsubscribe requests to ${senders.length} senders.\n\nThis can take 1-3 minutes for large batches.`,
     false, "Unsubscribe"
@@ -546,23 +644,96 @@ async function bulkTrash() {
   if (!sel.length) return;
   const senders = sel.map(s => s.sender);
   const total = sel.reduce((a, s) => a + s.count, 0);
-  const ok = await confirmModal(
+  const { ok, extra: block } = await confirmModal(
     "Move to trash in bulk",
     `Move ${total.toLocaleString()} messages from ${senders.length} senders to trash?\n\nRecoverable from Trash for 30 days.`,
-    true, "Move to trash"
+    true, "Move to trash",
+    { label: "Also block future mail (creates a Gmail filter per sender)", defaultChecked: false }
   );
   if (!ok) return;
   toast(`Trashing ${total} messages…`);
   try {
-    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders, block }) });
     const data = await r.json();
-    toast(`Trashed ${data.trashed} messages.`, "success");
+    let msg = `Trashed ${data.trashed} messages.`;
+    if (block && data.blocked) msg += ` Blocked ${data.blocked} sender${data.blocked === 1 ? '' : 's'}.`;
+    toast(msg, "success");
+    rescan();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function bulkArchive() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const total = sel.reduce((a, s) => a + s.count, 0);
+  const { ok } = await confirmModal(
+    "Archive in bulk",
+    `Archive ${total.toLocaleString()} messages from ${senders.length} senders?\n\nRemoves INBOX label — messages stay searchable in All Mail.`,
+    false, "Archive"
+  );
+  if (!ok) return;
+  toast(`Archiving ${total} messages…`);
+  try {
+    const r = await fetch("/api/archive-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    toast(`Archived ${data.archived} messages.`, "success");
+    rescan();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function bulkMarkRead() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const total = sel.reduce((a, s) => a + s.count, 0);
+  const { ok } = await confirmModal("Mark read in bulk", `Mark all ${total.toLocaleString()} messages from ${senders.length} senders as read?`, false, "Mark read");
+  if (!ok) return;
+  try {
+    const r = await fetch("/api/mark-read-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    toast(`Marked ${data.marked_read} messages as read.`, "success");
+    rescan();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function bulkBlock() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const { ok } = await confirmModal(
+    "Block senders",
+    `Create Gmail filter rules to auto-trash future mail from ${senders.length} senders?\n\nThis affects future mail only — existing mail is untouched.`,
+    true, "Create filters"
+  );
+  if (!ok) return;
+  try {
+    const r = await fetch("/api/block-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    toast(`Created ${data.blocked} block filter${data.blocked === 1 ? '' : 's'}.`, "success");
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function bulkRestore() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const { ok } = await confirmModal(
+    "Restore from trash",
+    `Restore trashed messages from ${senders.length} senders back to your inbox?`,
+    false, "Restore"
+  );
+  if (!ok) return;
+  try {
+    const r = await fetch("/api/restore-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    toast(`Restored ${data.restored} messages.`, "success");
     rescan();
   } catch (e) { toast(`Error: ${e.message}`, "error"); }
 }
 
 async function emptyTrash() {
-  const ok = await confirmModal(
+  const { ok } = await confirmModal(
     "Empty trash permanently",
     "This permanently deletes everything in your Gmail trash. This action cannot be undone.",
     true, "Permanently delete"
@@ -588,7 +759,12 @@ async function emptyTrash() {
 $$(".nav-item").forEach(btn => {
   btn.addEventListener("click", () => {
     setActiveNav(btn);
-    scan();
+    if (btn.dataset.view === "subs") {
+      $("#view-title").textContent = "Subscriptions";
+      loadSubs();
+    } else {
+      scan();
+    }
   });
 });
 

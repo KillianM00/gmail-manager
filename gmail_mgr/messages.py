@@ -128,6 +128,86 @@ def batch_trash(service, message_ids: list[str]) -> int:
     return total
 
 
+def batch_archive(service, message_ids: list[str]) -> int:
+    """Archive: remove INBOX label so the message lives only in All Mail."""
+    BATCH_SIZE = 1000
+    total = 0
+    for i in range(0, len(message_ids), BATCH_SIZE):
+        chunk = message_ids[i : i + BATCH_SIZE]
+        req = service.users().messages().batchModify(
+            userId="me",
+            body={"ids": chunk, "removeLabelIds": ["INBOX"]},
+        )
+        _execute_with_retry(req)
+        total += len(chunk)
+    return total
+
+
+def batch_mark_read(service, message_ids: list[str]) -> int:
+    """Remove UNREAD label."""
+    BATCH_SIZE = 1000
+    total = 0
+    for i in range(0, len(message_ids), BATCH_SIZE):
+        chunk = message_ids[i : i + BATCH_SIZE]
+        req = service.users().messages().batchModify(
+            userId="me",
+            body={"ids": chunk, "removeLabelIds": ["UNREAD"]},
+        )
+        _execute_with_retry(req)
+        total += len(chunk)
+    return total
+
+
+def batch_restore(service, message_ids: list[str]) -> int:
+    """Restore from trash: remove TRASH label, put back into INBOX."""
+    BATCH_SIZE = 1000
+    total = 0
+    for i in range(0, len(message_ids), BATCH_SIZE):
+        chunk = message_ids[i : i + BATCH_SIZE]
+        req = service.users().messages().batchModify(
+            userId="me",
+            body={
+                "ids": chunk,
+                "removeLabelIds": ["TRASH"],
+                "addLabelIds": ["INBOX"],
+            },
+        )
+        _execute_with_retry(req)
+        total += len(chunk)
+    return total
+
+
+def create_block_filter(service, sender: str) -> str | None:
+    """Create a Gmail filter that auto-trashes future mail from `sender`.
+
+    Returns the new filter ID, or None if a duplicate already exists.
+    """
+    sender = (sender or "").strip().lower()
+    if not sender:
+        return None
+    # Skip if a filter already targets this exact criteria
+    try:
+        existing = _execute_with_retry(
+            service.users().settings().filters().list(userId="me")
+        ).get("filter", []) or []
+        for f in existing:
+            crit = f.get("criteria", {}) or {}
+            if (crit.get("from") or "").lower() == sender:
+                action = f.get("action", {}) or {}
+                if "TRASH" in (action.get("addLabelIds") or []):
+                    return None
+    except HttpError:
+        pass
+    body = {
+        "criteria": {"from": sender},
+        "action": {"addLabelIds": ["TRASH"], "removeLabelIds": ["INBOX"]},
+    }
+    created = _execute_with_retry(
+        service.users().settings().filters().create(userId="me", body=body)
+    )
+    return created.get("id")
+
+
 def batch_permanent_delete(service, message_ids: list[str]) -> int:
     """Permanently delete messages (requires https://mail.google.com/ scope). Bypasses Trash."""
     BATCH_SIZE = 1000

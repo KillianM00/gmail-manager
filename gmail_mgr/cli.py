@@ -14,10 +14,16 @@ for _stream in (sys.stdout, sys.stderr):
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .auth import TOKEN_PATH, gmail_service
+from . import config as user_config
+from . import subs as subs_db
+from .auth import TOKEN_PATH, credentials_path, gmail_service, token_path
 from .messages import (
     add_label,
+    batch_archive,
+    batch_mark_read,
+    batch_restore,
     batch_trash,
+    create_block_filter,
     ensure_label,
     fetch_full,
     fetch_metadata,
@@ -79,13 +85,14 @@ def whoami():
 def serve(port, no_browser):
     """Start the local web GUI at http://localhost:PORT."""
     import threading
-    import webbrowser
 
     import uvicorn
 
+    from . import config as user_config
+
     url = f"http://localhost:{port}"
     if not no_browser:
-        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.0, lambda: user_config.open_url(url)).start()
     console.print(f"[green]gmail-manager UI running at[/green] [cyan]{url}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop.[/dim]")
     uvicorn.run("gmail_mgr.web:app", host="127.0.0.1", port=port, log_level="warning")
@@ -242,8 +249,8 @@ def delete_from(senders, from_file, yes):
 @click.option("--dry-run", is_flag=True, help="Plan only — do not send any requests.")
 @click.option(
     "--methods",
-    default="header-post,header-get,mailto,body-link",
-    help="Comma-separated methods in priority order. Choices: header-post, header-get, mailto, body-link.",
+    default="header-post,header-get,mailto",
+    help="Comma-separated methods in priority order. Choices: header-post, header-get, mailto, body-link. Default excludes body-link (security: see README).",
 )
 @click.option("--yes", is_flag=True, help="Skip confirmation prompt.")
 @click.option("--label/--no-label", default=True, help="Add 'gmail-mgr/unsubscribed' label to processed messages (default on).")
@@ -486,6 +493,279 @@ def unsubscribe(query, limit, per_sender, dry_run, methods, yes, label):
             f"(across {len(successful_senders)} senders).\n"
             f"To trash them all: [cyan]gmail-mgr delete --query \"label:{UNSUB_LABEL}\"[/cyan]"
         )
+
+
+@main.command()
+def setup():
+    """One-time setup wizard: pick a browser, walk through Cloud Console, sign in."""
+    console.print("[bold cyan]gmail-mgr setup[/bold cyan]")
+    console.print()
+
+    # Step 1: pick browser.
+    found = user_config.detect_installed_browsers()
+    if found:
+        console.print("[bold]1. Pick the browser you want gmail-mgr to use:[/bold]")
+        for i, (name, path) in enumerate(found, 1):
+            console.print(f"  {i}. {name}  [dim]{path}[/dim]")
+        console.print(f"  {len(found) + 1}. system default")
+        choice = click.prompt("Choice", type=click.IntRange(1, len(found) + 1), default=1)
+        if choice <= len(found):
+            name, path = found[choice - 1]
+            user_config.set_("browser", name)
+            console.print(f"[green]Set browser to {name}.[/green]\n")
+        else:
+            user_config.set_("browser", None)
+            console.print("[green]Using system default.[/green]\n")
+    else:
+        console.print("[yellow]No browsers auto-detected — will use system default.[/yellow]\n")
+
+    # Step 2: credentials.json check.
+    cf = credentials_path()
+    if cf.exists():
+        console.print(f"[green]Found credentials.json at {cf}[/green]\n")
+    else:
+        console.print("[bold]2. OAuth client (credentials.json):[/bold]")
+        console.print("  - Open https://console.cloud.google.com/apis/credentials")
+        console.print("  - Create OAuth client ID -> Desktop app")
+        console.print("  - Enable the Gmail API for the project")
+        console.print("  - Add yourself as a test user under OAuth consent screen")
+        console.print("  - Download the JSON and save it as:")
+        console.print(f"    [cyan]{cf}[/cyan]")
+        console.print()
+        if click.confirm("Open the Cloud Console page now?", default=True):
+            user_config.open_url("https://console.cloud.google.com/apis/credentials")
+        console.print()
+        click.prompt("Press Enter once credentials.json is in place", default="", show_default=False)
+        if not cf.exists():
+            console.print(f"[red]Still no file at {cf}. Re-run `gmail-mgr setup`.[/red]")
+            return
+
+    # Step 3: sign in.
+    console.print("[bold]3. Signing in...[/bold]")
+    svc = gmail_service()
+    profile = svc.users().getProfile(userId="me").execute()
+    console.print(f"[green]Signed in as[/green] {profile['emailAddress']}")
+    console.print(f"[dim]Token cached at: {token_path()}[/dim]")
+    console.print("\n[bold green]All set.[/bold green] Try [cyan]gmail-mgr serve[/cyan] for the GUI.")
+
+
+@main.group()
+def config():
+    """Manage gmail-mgr settings (browser, etc.)."""
+
+
+@config.command("browser")
+def config_browser():
+    """Pick which browser to use for OAuth + GUI."""
+    found = user_config.detect_installed_browsers()
+    current = user_config.get("browser")
+    console.print(f"Current: [cyan]{current or 'system default'}[/cyan]")
+    if not found:
+        console.print("[yellow]No browsers auto-detected.[/yellow]")
+        return
+    for i, (name, path) in enumerate(found, 1):
+        console.print(f"  {i}. {name}  [dim]{path}[/dim]")
+    console.print(f"  {len(found) + 1}. system default")
+    choice = click.prompt("Choice", type=click.IntRange(1, len(found) + 1), default=1)
+    if choice <= len(found):
+        name, _ = found[choice - 1]
+        user_config.set_("browser", name)
+        console.print(f"[green]Set browser to {name}.[/green]")
+    else:
+        user_config.set_("browser", None)
+        console.print("[green]Using system default.[/green]")
+
+
+@config.command("show")
+def config_show():
+    """Print the current config."""
+    console.print(user_config.load_config() or {"(empty)": ""})
+
+
+# ---------- subscription registry ----------
+
+@main.command()
+@click.option("--status", default=None, help="Filter by status (active, unsubscribed, trashed, blocked, archived).")
+@click.option("--domain", default=None, help="Filter by domain.")
+@click.option("--limit", type=int, default=200)
+def subs(status, domain, limit):
+    """List senders we've seen, with their action history."""
+    rows = subs_db.list_senders(status=status, domain=domain, limit=limit)
+    stats = subs_db.stats()
+    if stats:
+        line = "  ".join(f"[cyan]{k}[/cyan]:{v['senders']}" for k, v in stats.items())
+        console.print(f"Totals: {line}")
+    if not rows:
+        console.print("[yellow]No senders yet — run `gmail-mgr senders` first.[/yellow]")
+        return
+    table = Table(title=f"{len(rows)} senders")
+    table.add_column("Address", overflow="fold", max_width=40)
+    table.add_column("Status")
+    table.add_column("Msgs", justify="right")
+    table.add_column("Domain", overflow="fold")
+    for r in rows:
+        table.add_row(r["address"], r["status"], str(r["message_count"]), r["domain"])
+    console.print(table)
+
+
+# ---------- generic sender-action helpers ----------
+
+def _gather_senders(senders_opt, from_file):
+    out = list(senders_opt)
+    if from_file:
+        with open(from_file, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    out.append(line)
+    return [s.lower().strip() for s in out if s.strip()]
+
+
+def _ids_for(svc, targets, in_trash=False):
+    all_ids: list[str] = []
+    per: dict[str, int] = {}
+    prefix = "in:trash " if in_trash else ""
+    for t in targets:
+        ids = list_message_ids(svc, query=f"{prefix}from:{t}")
+        per[t] = len(ids)
+        all_ids.extend(ids)
+    return list(dict.fromkeys(all_ids)), per
+
+
+@main.command()
+@click.option("--sender", "senders_opt", multiple=True, help="Sender or domain (repeatable).")
+@click.option("--from-file", type=click.Path(exists=True, dir_okay=False), help="One sender per line.")
+@click.option("--yes", is_flag=True)
+def archive(senders_opt, from_file, yes):
+    """Archive (remove INBOX label) all messages from given senders."""
+    targets = _gather_senders(senders_opt, from_file)
+    if not targets:
+        console.print("[red]No senders.[/red]")
+        return
+    svc = gmail_service()
+    ids, per = _ids_for(svc, targets)
+    if not ids:
+        console.print("[yellow]No messages found.[/yellow]")
+        return
+    console.print(f"About to archive [bold]{len(ids)}[/bold] messages from {len(targets)} senders.")
+    if not yes and not click.confirm("Continue?", default=False):
+        return
+    n = batch_archive(svc, ids)
+    subs_db.set_status(targets, "archived")
+    console.print(f"[green]Archived {n} messages.[/green]")
+
+
+@main.command(name="mark-read")
+@click.option("--sender", "senders_opt", multiple=True)
+@click.option("--from-file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--yes", is_flag=True)
+def mark_read(senders_opt, from_file, yes):
+    """Mark all messages from given senders as read."""
+    targets = _gather_senders(senders_opt, from_file)
+    if not targets:
+        console.print("[red]No senders.[/red]")
+        return
+    svc = gmail_service()
+    ids, per = _ids_for(svc, targets)
+    if not ids:
+        console.print("[yellow]Nothing to mark.[/yellow]")
+        return
+    if not yes and not click.confirm(f"Mark {len(ids)} messages read?", default=False):
+        return
+    n = batch_mark_read(svc, ids)
+    console.print(f"[green]Marked {n} messages read.[/green]")
+
+
+@main.command()
+@click.option("--sender", "senders_opt", multiple=True)
+@click.option("--from-file", type=click.Path(exists=True, dir_okay=False))
+@click.option("--yes", is_flag=True)
+def restore(senders_opt, from_file, yes):
+    """Restore trashed messages from given senders back to inbox."""
+    targets = _gather_senders(senders_opt, from_file)
+    if not targets:
+        console.print("[red]No senders.[/red]")
+        return
+    svc = gmail_service()
+    ids, per = _ids_for(svc, targets, in_trash=True)
+    if not ids:
+        console.print("[yellow]No trashed messages found.[/yellow]")
+        return
+    if not yes and not click.confirm(f"Restore {len(ids)} messages?", default=False):
+        return
+    n = batch_restore(svc, ids)
+    subs_db.set_status(targets, "active", note="restored from trash")
+    console.print(f"[green]Restored {n} messages.[/green]")
+
+
+@main.command()
+@click.option("--sender", "senders_opt", multiple=True)
+@click.option("--from-file", type=click.Path(exists=True, dir_okay=False))
+def block(senders_opt, from_file):
+    """Create Gmail filters that auto-trash future mail from given senders."""
+    targets = _gather_senders(senders_opt, from_file)
+    if not targets:
+        console.print("[red]No senders.[/red]")
+        return
+    svc = gmail_service()
+    n = 0
+    for t in targets:
+        try:
+            fid = create_block_filter(svc, t)
+            if fid:
+                n += 1
+                console.print(f"[green]blocked[/green] {t}")
+            else:
+                console.print(f"[dim]already blocked[/dim] {t}")
+        except Exception as e:
+            console.print(f"[red]failed[/red] {t}: {e}")
+    subs_db.set_status(targets, "blocked", note="auto-trash filter created")
+    console.print(f"\n[bold]{n}[/bold] new block filters created.")
+
+
+@main.command()
+@click.option("--status", required=True, help="Registry status to sweep (e.g. unsubscribed).")
+@click.option("--action", required=True, type=click.Choice(["trash", "archive", "block"]))
+@click.option("--yes", is_flag=True)
+def sweep(status, action, yes):
+    """Run an action across every sender currently at the given status.
+
+    Example: trash everything still arriving from unsubscribed senders.
+      gmail-mgr sweep --status unsubscribed --action trash
+    """
+    rows = subs_db.list_senders(status=status, limit=10_000)
+    targets = [r["address"] for r in rows]
+    if not targets:
+        console.print(f"[yellow]No senders with status '{status}'.[/yellow]")
+        return
+    console.print(f"[bold]{len(targets)}[/bold] senders at status '{status}'.")
+    if not yes and not click.confirm(f"Run '{action}' on all of them?", default=False):
+        return
+    svc = gmail_service()
+    if action == "block":
+        n = 0
+        for t in targets:
+            try:
+                if create_block_filter(svc, t):
+                    n += 1
+            except Exception:
+                continue
+        subs_db.set_status(targets, "blocked", note="sweep --action block")
+        console.print(f"[green]Created {n} block filters.[/green]")
+        return
+
+    ids, _ = _ids_for(svc, targets)
+    if not ids:
+        console.print("[yellow]No messages to act on.[/yellow]")
+        return
+    if action == "trash":
+        n = batch_trash(svc, ids)
+        subs_db.set_status(targets, "trashed", note="sweep --action trash")
+        console.print(f"[green]Trashed {n} messages.[/green]")
+    else:
+        n = batch_archive(svc, ids)
+        subs_db.set_status(targets, "archived", note="sweep --action archive")
+        console.print(f"[green]Archived {n} messages.[/green]")
 
 
 if __name__ == "__main__":

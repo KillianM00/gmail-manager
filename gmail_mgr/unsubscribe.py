@@ -1,11 +1,64 @@
 import base64
 import email.message
+import ipaddress
 import re
+import socket
 import urllib.parse
 from dataclasses import dataclass, field
 
 import httpx
 from bs4 import BeautifulSoup
+
+
+def _is_private_host(host: str) -> bool:
+    """True if `host` resolves to a loopback / private / link-local / multicast IP."""
+    if not host:
+        return True
+    host = host.strip().rstrip(".").lower()
+    # localhost variants without DNS
+    if host in {"localhost", "ip6-localhost", "ip6-loopback"}:
+        return True
+    # bracketed IPv6 literals
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    # try as literal IP first
+    try:
+        ip = ipaddress.ip_address(host)
+        return (
+            ip.is_loopback or ip.is_private or ip.is_link_local
+            or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+        )
+    except ValueError:
+        pass
+    # resolve hostname; reject if any returned address is private
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return True  # can't resolve = don't trust it
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+            if (
+                ip.is_loopback or ip.is_private or ip.is_link_local
+                or ip.is_multicast or ip.is_reserved or ip.is_unspecified
+            ):
+                return True
+        except ValueError:
+            return True
+    return False
+
+
+def is_safe_unsub_url(url: str) -> bool:
+    """Refuse URLs that point at loopback / RFC1918 / link-local / cloud-metadata."""
+    try:
+        u = urllib.parse.urlparse(url)
+    except Exception:
+        return False
+    if u.scheme not in ("http", "https"):
+        return False
+    if not u.hostname:
+        return False
+    return not _is_private_host(u.hostname)
 
 UNSUB_TEXT_RE = re.compile(
     r"unsubscribe|opt[\s\-]?out|stop\s+receiving|email\s+preferences|manage\s+(subscription|preferences)|remove\s+me",
@@ -144,6 +197,8 @@ def http_unsubscribe(
     one_click_post: bool,
 ) -> tuple[bool, str]:
     """Hit the URL. For one_click_post, send RFC 8058 POST. Otherwise GET, then follow a confirm form if present."""
+    if not is_safe_unsub_url(url):
+        return False, "blocked: private / loopback / non-http URL"
     try:
         if one_click_post:
             r = client.post(
@@ -191,6 +246,9 @@ def http_unsubscribe(
                 action_url = action
             else:
                 action_url = str(httpx.URL(str(r.url)).join(action))
+
+            if not is_safe_unsub_url(action_url):
+                return False, "blocked form action: private / loopback URL"
 
             try:
                 if method == "post":

@@ -1,7 +1,29 @@
 [project]
 name = "gmail-manager"
-version = "0.1.0"
-requires-python = ">=3.11"
+version = "0.2.0"
+description = "Local-first Gmail manager: bulk delete, real RFC 8058 unsubscribe sweep, empty trash, storage analysis. CLI + web GUI."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "Killian Miller" },
+]
+keywords = ["gmail", "email", "unsubscribe", "cleanup", "bulk-delete", "inbox"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: Email",
+    "Topic :: Utilities",
+]
 dependencies = [
     "google-auth-oauthlib>=1.2.0",
     "google-auth>=2.30.0",
@@ -13,6 +35,11 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/KillianM00/gmail-manager"
+Repository = "https://github.com/KillianM00/gmail-manager"
+Issues = "https://github.com/KillianM00/gmail-manager/issues"
 
 [project.scripts]
 gmail-mgr = "gmail_mgr.cli:main"
