@@ -1,0 +1,23 @@
+[project]
+name = "gmail-manager"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "google-auth-oauthlib>=1.2.0",
+    "google-auth>=2.30.0",
+    "google-api-python-client>=2.130.0",
+    "click>=8.1.7",
+    "httpx>=0.27.0",
+    "rich>=13.7.0",
+    "beautifulsoup4>=4.12.0",
+]
+
+[project.scripts]
+gmail-mgr = "gmail_mgr.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gmail_mgr*"]
