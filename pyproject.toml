@@ -1,6 +1,6 @@
 [project]
 name = "gmail-manager"
-version = "0.2.0"
+version = "0.2.1"
 description = "Local-first Gmail bulk manager: real RFC 8058 unsubscribe sweeps, mass delete, archive/restore/block, subscription registry. CLI + web GUI."
 readme = "README.md"
 license = { text = "MIT" }
