@@ -14,11 +14,18 @@ token cached on your filesystem.
 ## Get started in 60 seconds
 
 ```bash
+pip install gmail-manager
+gmail-mgr setup           # ← do this once
+gmail-mgr serve           # ← open the GUI at http://localhost:8000
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/KillianM00/gmail-manager.git
 cd gmail-manager
 pip install -e .          # or: uv sync
-gmail-mgr setup           # ← do this once
-gmail-mgr serve           # ← open the GUI at http://localhost:8000
+gmail-mgr setup
 ```
 
 `gmail-mgr setup` is an **interactive wizard** that handles the entire
