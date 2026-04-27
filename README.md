@@ -14,7 +14,7 @@ token cached on your filesystem.
 ## Get started in 60 seconds
 
 ```bash
-git clone https://github.com/killianmiller00/gmail-manager.git
+git clone https://github.com/KillianM00/gmail-manager.git
 cd gmail-manager
 pip install -e .          # or: uv sync
 gmail-mgr setup           # ← do this once
@@ -84,7 +84,7 @@ To redo OAuth later: delete `~/.gmail-mgr/token.json` and run any command.
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/killianmiller00/gmail-manager.git
+git clone https://github.com/KillianM00/gmail-manager.git
 cd gmail-manager
 
 # With uv (recommended)
