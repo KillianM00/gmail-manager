@@ -110,7 +110,7 @@ def fetch_full(service, message_ids: list[str], progress_cb=None) -> dict[str, d
 
 
 def batch_trash(service, message_ids: list[str]) -> int:
-    """Trash messages (gmail.modify-safe — recoverable for 30 days)."""
+    """Move messages to Trash (recoverable for 30 days)."""
     BATCH_SIZE = 1000
     total = 0
     for i in range(0, len(message_ids), BATCH_SIZE):
@@ -122,6 +122,21 @@ def batch_trash(service, message_ids: list[str]) -> int:
                 "addLabelIds": ["TRASH"],
                 "removeLabelIds": ["INBOX", "UNREAD"],
             },
+        )
+        _execute_with_retry(req)
+        total += len(chunk)
+    return total
+
+
+def batch_permanent_delete(service, message_ids: list[str]) -> int:
+    """Permanently delete messages (requires https://mail.google.com/ scope). Bypasses Trash."""
+    BATCH_SIZE = 1000
+    total = 0
+    for i in range(0, len(message_ids), BATCH_SIZE):
+        chunk = message_ids[i : i + BATCH_SIZE]
+        req = service.users().messages().batchDelete(
+            userId="me",
+            body={"ids": chunk},
         )
         _execute_with_retry(req)
         total += len(chunk)

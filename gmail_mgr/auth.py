@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from google.auth.transport.requests import Request
@@ -6,7 +7,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
 SCOPES = [
-    "https://www.googleapis.com/auth/gmail.modify",
+    "https://mail.google.com/",
 ]
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -14,18 +15,33 @@ CREDENTIALS_PATH = ROOT / "credentials.json"
 TOKEN_PATH = ROOT / "token.json"
 
 
+def _token_has_scopes(required: list[str]) -> bool:
+    try:
+        data = json.loads(TOKEN_PATH.read_text())
+    except Exception:
+        return False
+    granted = set(data.get("scopes") or [])
+    return set(required).issubset(granted)
+
+
 def load_credentials() -> Credentials:
     creds: Credentials | None = None
-    if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    if TOKEN_PATH.exists() and _token_has_scopes(SCOPES):
+        try:
+            creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+        except Exception:
+            creds = None
 
     if creds and creds.valid:
         return creds
 
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        TOKEN_PATH.write_text(creds.to_json())
-        return creds
+        try:
+            creds.refresh(Request())
+            TOKEN_PATH.write_text(creds.to_json())
+            return creds
+        except Exception:
+            creds = None
 
     if not CREDENTIALS_PATH.exists():
         raise FileNotFoundError(
