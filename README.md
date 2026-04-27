@@ -9,6 +9,44 @@ Comes with both a CLI and a small web GUI that runs on `localhost`. Your data
 never leaves your machine — it talks straight to the Gmail API with an OAuth
 token cached on your filesystem.
 
+---
+
+## Get started in 60 seconds
+
+```bash
+git clone https://github.com/killianmiller00/gmail-manager.git
+cd gmail-manager
+pip install -e .          # or: uv sync
+gmail-mgr setup           # ← do this once
+gmail-mgr serve           # ← open the GUI at http://localhost:8000
+```
+
+`gmail-mgr setup` is an **interactive wizard** that handles the entire
+first-run experience for you. It will:
+
+1. **Detect every browser installed on your machine** (Chrome, Edge, Firefox,
+   Brave, Arc, Opera, Safari) and ask which one you want gmail-mgr to use.
+   Every future browser pop — OAuth consent, GUI launch — uses your pick.
+2. **Walk you through creating a Google Cloud OAuth client** (~5 minutes,
+   one-time). It opens the Cloud Console for you, lists exact menu paths,
+   and waits while you drop the downloaded `credentials.json` into the right
+   place.
+3. **Run the OAuth consent flow** in your chosen browser and cache the token.
+
+Everything lives under `~/.gmail-mgr/` — the credentials, token, browser
+preference, and subscription database are scoped per-user, not per-clone, so
+you can run gmail-mgr from any directory after the first setup.
+
+> Already have `credentials.json` from a previous install? Drop it at
+> `~/.gmail-mgr/credentials.json` (or leave it in the project root — both work)
+> and `gmail-mgr setup` will skip the Cloud Console step.
+
+To change the browser later: `gmail-mgr config browser`.
+
+To redo OAuth later: delete `~/.gmail-mgr/token.json` and run any command.
+
+---
+
 ## What it does
 
 - **Group senders** — scan any Gmail query (Inbox, last year, a label, anything)
@@ -46,7 +84,7 @@ token cached on your filesystem.
 Requires Python 3.10+.
 
 ```bash
-git clone https://github.com/KillianM00/gmail-manager.git
+git clone https://github.com/killianmiller00/gmail-manager.git
 cd gmail-manager
 
 # With uv (recommended)
@@ -59,31 +97,11 @@ python -m venv .venv
 pip install -e .
 ```
 
-## Quickstart
+Then run `gmail-mgr setup` — see [Get started in 60 seconds](#get-started-in-60-seconds).
 
-```bash
-gmail-mgr setup     # interactive: pick a browser, walk through Cloud Console, sign in
-gmail-mgr serve     # open the GUI at http://localhost:8000
-```
+## Manual Google OAuth setup (if you skip the wizard)
 
-The setup wizard:
-
-1. Detects installed browsers and asks which one you want gmail-mgr to use
-   (for the OAuth flow and the GUI).
-2. Walks you through creating a Google Cloud OAuth client (~5 minutes,
-   one-time).
-3. Runs the consent flow and caches your token.
-
-Config and data live in `~/.gmail-mgr/`:
-
-- `~/.gmail-mgr/config.json` — your browser preference
-- `~/.gmail-mgr/credentials.json` — your OAuth client (kept on your machine)
-- `~/.gmail-mgr/token.json` — the issued access/refresh token
-- `~/.gmail-mgr/subs.db` — subscription registry
-
-## Manual Google OAuth setup
-
-If you prefer to do this without the wizard:
+The wizard does all of this for you. If you prefer to do it by hand:
 
 1. <https://console.cloud.google.com/> → create or pick a project.
 2. **APIs & Services → Library** → enable **Gmail API**.
