@@ -74,6 +74,24 @@ def whoami():
 
 
 @main.command()
+@click.option("--port", default=8000, type=int, help="Port to bind (default: 8000).")
+@click.option("--no-browser", is_flag=True, help="Don't auto-open the browser.")
+def serve(port, no_browser):
+    """Start the local web GUI at http://localhost:PORT."""
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    url = f"http://localhost:{port}"
+    if not no_browser:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    console.print(f"[green]gmail-manager UI running at[/green] [cyan]{url}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop.[/dim]")
+    uvicorn.run("gmail_mgr.web:app", host="127.0.0.1", port=port, log_level="warning")
+
+
+@main.command()
 @click.option("--query", default="", help='Gmail search query (default: all non-trash mail). Example: --query "in:inbox"')
 @click.option("--top", type=int, default=50, help="Show top N senders.")
 @click.option("--limit", type=int, default=None, help="Cap how many messages to scan (for fast testing).")

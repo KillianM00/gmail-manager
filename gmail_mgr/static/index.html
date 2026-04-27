@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gmail-manager</title>
+<style>
+  :root {
+    --bg: #f6f8fa;
+    --card: #ffffff;
+    --border: #d0d7de;
+    --border-subtle: #eaeef2;
+    --text: #1f2328;
+    --text-2: #59636e;
+    --text-3: #818b95;
+    --accent: #0969da;
+    --accent-bg: #ddf4ff;
+    --danger: #cf222e;
+    --danger-bg: #ffebe9;
+    --success: #1f883d;
+    --hover: #f3f4f6;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    grid-template-rows: 1fr;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  aside {
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 20px 14px;
+  }
+  .account { padding: 4px 8px 18px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 14px; }
+  .account-email { font-weight: 600; font-size: 13px; word-break: break-all; line-height: 1.3; }
+  .account-meta { color: var(--text-3); font-size: 12px; margin-top: 4px; }
+
+  .nav-group { margin-bottom: 18px; }
+  .nav-title { font-size: 11px; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.06em; padding: 0 8px 6px; font-weight: 600; }
+  .nav-item {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 6px 8px; margin-bottom: 1px;
+    background: none; border: none; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: var(--text); text-align: left;
+    font-family: inherit;
+  }
+  .nav-item:hover { background: var(--hover); }
+  .nav-item.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .nav-item .count { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .nav-item.active .count { color: var(--accent); }
+
+  .sidebar-button {
+    display: block; width: 100%; padding: 7px 10px; margin-top: 6px;
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer; font-size: 12px; color: var(--danger);
+    font-family: inherit; font-weight: 500;
+  }
+  .sidebar-button:hover { background: var(--danger-bg); border-color: var(--danger); }
+  .sidebar-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Main */
+  main {
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .toolbar {
+    padding: 16px 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px;
+    flex-wrap: wrap;
+  }
+  .view-title { font-size: 18px; font-weight: 600; margin: 0; }
+  .view-meta { color: var(--text-3); font-size: 13px; margin-left: auto; margin-right: 8px; font-variant-numeric: tabular-nums; }
+  .custom-query { flex: 0 1 280px; }
+  .custom-query input {
+    width: 100%; padding: 6px 10px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 6px; font-family: inherit;
+  }
+  .toolbar button {
+    padding: 6px 12px; font-size: 13px; font-weight: 500;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+    font-family: inherit;
+  }
+  .toolbar button:hover { background: var(--hover); }
+
+  .content { flex: 1; overflow-y: auto; padding: 16px 24px 100px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; box-shadow: var(--shadow-sm); overflow: hidden; }
+  thead th {
+    text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-3);
+    letter-spacing: 0.05em; padding: 10px 12px; border-bottom: 1px solid var(--border);
+    font-weight: 600; background: var(--card); position: sticky; top: 0;
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border-subtle); font-size: 13px; vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--hover); }
+  tbody tr.selected { background: var(--accent-bg); }
+  tbody tr.selected:hover { background: #c8e7ff; }
+
+  .col-check { width: 36px; }
+  .col-rank { width: 32px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .col-count { width: 60px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .col-actions { width: 150px; }
+  .row-actions { display: flex; gap: 6px; }
+  .row-actions button {
+    padding: 4px 10px; font-size: 12px; font-weight: 500;
+    background: var(--card); border: 1px solid var(--border); border-radius: 5px;
+    cursor: pointer; font-family: inherit; color: var(--text-2);
+  }
+  .row-actions button:hover { background: var(--hover); color: var(--text); }
+  .row-actions button.danger { color: var(--danger); }
+  .row-actions button.danger:hover { background: var(--danger-bg); border-color: var(--danger); }
+
+  .empty-state, .loading-state {
+    padding: 60px 20px; text-align: center; color: var(--text-3);
+    background: var(--card); border-radius: 8px; box-shadow: var(--shadow-sm);
+  }
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid var(--border); border-top-color: var(--accent);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Sticky bulk action bar */
+  .action-bar {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(150%);
+    background: #1f2328; color: white;
+    padding: 12px 16px; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    display: flex; align-items: center; gap: 12px;
+    transition: transform 0.2s ease;
+    z-index: 50;
+  }
+  .action-bar.show { transform: translateX(-50%) translateY(0); }
+  .action-bar .count-pill {
+    background: rgba(255,255,255,0.12); padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600;
+  }
+  .action-bar button {
+    padding: 7px 14px; font-size: 13px; font-weight: 500; border: none; border-radius: 6px;
+    cursor: pointer; font-family: inherit;
+  }
+  .action-bar .btn-unsub { background: var(--accent); color: white; }
+  .action-bar .btn-unsub:hover { background: #0860c8; }
+  .action-bar .btn-trash { background: var(--danger); color: white; }
+  .action-bar .btn-trash:hover { background: #b91c1c; }
+  .action-bar .btn-cancel { background: rgba(255,255,255,0.08); color: white; }
+  .action-bar .btn-cancel:hover { background: rgba(255,255,255,0.16); }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15, 20, 25, 0.4);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--card); border-radius: 10px; padding: 22px 24px;
+    box-shadow: var(--shadow); min-width: 380px; max-width: 480px;
+  }
+  .modal-title { font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+  .modal-body { color: var(--text-2); font-size: 13px; line-height: 1.5; margin-bottom: 18px; white-space: pre-wrap; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .modal-actions button {
+    padding: 7px 14px; font-size: 13px; font-weight: 500; border-radius: 6px;
+    cursor: pointer; font-family: inherit; border: 1px solid var(--border);
+    background: var(--card); color: var(--text);
+  }
+  .modal-actions button:hover { background: var(--hover); }
+  .modal-actions button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .modal-actions button.primary:hover { background: #0860c8; }
+  .modal-actions button.danger { background: var(--danger); color: white; border-color: var(--danger); }
+  .modal-actions button.danger:hover { background: #b91c1c; }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: 16px; right: 16px;
+    padding: 10px 14px; border-radius: 6px;
+    background: var(--card); border: 1px solid var(--border);
+    box-shadow: var(--shadow); font-size: 13px; max-width: 380px;
+    transform: translateX(120%); transition: transform 0.2s ease;
+    z-index: 200;
+  }
+  .toast.show { transform: translateX(0); }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error { border-left: 3px solid var(--danger); }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="account">
+    <div class="account-email" id="account-email">Loading…</div>
+    <div class="account-meta" id="account-meta"></div>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-title">Browse</div>
+    <button class="nav-item active" data-query="in:inbox" data-title="Inbox">
+      <span>Inbox</span><span class="count" data-count="inbox"></span>
+    </button>
+    <button class="nav-item" data-query="is:unread" data-title="Unread">
+      <span>Unread</span><span class="count" data-count="unread"></span>
+    </button>
+    <button class="nav-item" data-query="category:promotions" data-title="Promotions">
+      <span>Promotions</span><span class="count"></span>
+    </button>
+    <button class="nav-item" data-query="category:social" data-title="Social">
+      <span>Social</span><span class="count"></span>
+    </button>
+    <button class="nav-item" data-query="category:updates" data-title="Updates">
+      <span>Updates</span><span class="count"></span>
+    </button>
+    <button class="nav-item" data-query="in:inbox older_than:1y" data-title="Older than 1 year">
+      <span>Older than 1y</span><span class="count"></span>
+    </button>
+    <button class="nav-item" data-query="" data-title="All mail">
+      <span>All mail</span><span class="count"></span>
+    </button>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-title">Cleanup</div>
+    <button class="nav-item" data-query="label:gmail-mgr/unsubscribed" data-title="Unsubscribed">
+      <span>Unsubscribed</span><span class="count" data-count="unsubscribed"></span>
+    </button>
+    <button class="nav-item" data-query="in:spam" data-title="Spam">
+      <span>Spam</span><span class="count" data-count="spam"></span>
+    </button>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-title">Trash</div>
+    <button class="nav-item" data-query="in:trash" data-title="Trash">
+      <span>Trash</span><span class="count" data-count="trash"></span>
+    </button>
+    <button class="sidebar-button" id="empty-trash-btn" onclick="emptyTrash()">Empty trash</button>
+  </div>
+</aside>
+
+<main>
+  <header class="toolbar">
+    <h1 class="view-title" id="view-title">Inbox</h1>
+    <div class="view-meta" id="view-meta"></div>
+    <div class="custom-query">
+      <input type="text" id="custom-query" placeholder='Custom query (Gmail syntax)…' />
+    </div>
+    <div class="custom-query">
+      <input type="text" id="sender-filter" placeholder='Filter senders…' oninput="filterSenders()" />
+    </div>
+    <button onclick="rescan()" title="Re-fetch (bypasses cache)">Refresh</button>
+    <button onclick="selectAllVisible()">Select all</button>
+    <button onclick="selectNone()">Select none</button>
+  </header>
+
+  <div class="content" id="content">
+    <div class="empty-state">Select a view from the sidebar to scan.</div>
+  </div>
+</main>
+
+<div class="action-bar" id="action-bar">
+  <span class="count-pill" id="action-count">0 selected</span>
+  <button class="btn-unsub" onclick="bulkUnsub()">Unsubscribe</button>
+  <button class="btn-trash" onclick="bulkTrash()">Move to trash</button>
+  <button class="btn-cancel" onclick="selectNone()">Cancel</button>
+</div>
+
+<div class="modal-backdrop" id="modal-backdrop">
+  <div class="modal">
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-actions">
+      <button onclick="resolveModal(false)">Cancel</button>
+      <button class="primary" id="modal-confirm" onclick="resolveModal(true)">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+
+let currentQuery = "in:inbox";
+let currentTitle = "Inbox";
+let modalResolver = null;
+let toastTimer = null;
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+
+function toast(msg, kind = "success") {
+  const el = $("#toast");
+  el.className = "toast show " + kind;
+  el.textContent = msg;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 5000);
+}
+
+function confirmModal(title, body, danger = false, confirmText = "Confirm") {
+  return new Promise((resolve) => {
+    $("#modal-title").textContent = title;
+    $("#modal-body").textContent = body;
+    const btn = $("#modal-confirm");
+    btn.textContent = confirmText;
+    btn.className = danger ? "danger" : "primary";
+    $("#modal-backdrop").classList.add("show");
+    modalResolver = resolve;
+  });
+}
+
+function resolveModal(value) {
+  $("#modal-backdrop").classList.remove("show");
+  if (modalResolver) { modalResolver(value); modalResolver = null; }
+}
+
+async function loadProfile() {
+  try {
+    const p = await (await fetch("/api/profile")).json();
+    $("#account-email").textContent = p.email;
+    $("#account-meta").textContent = `${p.messages_total.toLocaleString()} messages`;
+  } catch {
+    $("#account-email").textContent = "Auth error";
+    $("#account-meta").textContent = "Run `gmail-mgr auth` and refresh.";
+  }
+}
+
+async function loadCounts() {
+  try {
+    const c = await (await fetch("/api/counts")).json();
+    $$("[data-count]").forEach(el => {
+      const k = el.dataset.count;
+      el.textContent = (c[k] ?? 0).toLocaleString();
+    });
+  } catch {}
+}
+
+function setActiveNav(btn) {
+  $$(".nav-item").forEach(n => n.classList.remove("active"));
+  btn.classList.add("active");
+  currentQuery = btn.dataset.query;
+  currentTitle = btn.dataset.title;
+  $("#view-title").textContent = currentTitle;
+  $("#custom-query").value = "";
+}
+
+async function scan() {
+  const content = $("#content");
+  content.innerHTML = `<div class="loading-state"><span class="spinner"></span>Scanning…</div>`;
+  $("#view-meta").textContent = "";
+  const f = $("#sender-filter"); if (f) f.value = "";
+  selectNone();
+
+  try {
+    const url = `/api/senders?query=${encodeURIComponent(currentQuery)}&top=300`;
+    const data = await (await fetch(url)).json();
+
+    if (!data.senders || !data.senders.length) {
+      content.innerHTML = `<div class="empty-state">No senders found in this view.</div>`;
+      const m = $("#view-meta"); m.textContent = "0 messages"; m.dataset.base = "0 messages";
+      return;
+    }
+
+    const baseMeta = `${data.scanned.toLocaleString()} messages · ${data.unique} unique senders${data.cached ? " · cached" : ""}`;
+    $("#view-meta").textContent = baseMeta;
+    $("#view-meta").dataset.base = baseMeta;
+    content.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th class="col-check"><input type="checkbox" onclick="toggleAll(this)" id="header-check"></th>
+            <th class="col-rank">#</th>
+            <th class="col-count">Count</th>
+            <th>Sender</th>
+            <th>Name</th>
+            <th class="col-actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.senders.map((s, i) => `
+            <tr data-sender="${escapeHtml(s.address)}" data-count="${s.count}">
+              <td class="col-check"><input type="checkbox" class="row-check" onchange="updateActionBar()"></td>
+              <td class="col-rank">${i + 1}</td>
+              <td class="col-count">${s.count}</td>
+              <td>${escapeHtml(s.address)}</td>
+              <td style="color:var(--text-3)">${escapeHtml(s.name)}</td>
+              <td>
+                <div class="row-actions">
+                  <button onclick="oneUnsub('${encodeURIComponent(s.address)}')">Unsub</button>
+                  <button class="danger" onclick="oneTrash('${encodeURIComponent(s.address)}', ${s.count})">Trash</button>
+                </div>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Error: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function rescan() { scan(); loadCounts(); }
+
+function toggleAll(el) {
+  $$(".row-check").forEach(c => {
+    c.checked = el.checked;
+    c.closest("tr").classList.toggle("selected", el.checked);
+  });
+  updateActionBar();
+}
+
+function selectAll() {
+  $$(".row-check").forEach(c => { c.checked = true; c.closest("tr").classList.add("selected"); });
+  const h = $("#header-check"); if (h) h.checked = true;
+  updateActionBar();
+}
+
+function selectAllVisible() {
+  $$(".row-check").forEach(c => {
+    const row = c.closest("tr");
+    if (row.style.display !== "none") {
+      c.checked = true;
+      row.classList.add("selected");
+    }
+  });
+  const h = $("#header-check"); if (h) h.checked = true;
+  updateActionBar();
+}
+
+function filterSenders() {
+  const q = ($("#sender-filter")?.value || "").trim().toLowerCase();
+  let visible = 0, total = 0;
+  $$("tbody tr[data-sender]").forEach(row => {
+    total++;
+    if (!q) {
+      row.style.display = "";
+      visible++;
+      return;
+    }
+    const sender = row.dataset.sender || "";
+    const name = (row.children[4]?.textContent || "").toLowerCase();
+    const match = sender.includes(q) || name.includes(q);
+    row.style.display = match ? "" : "none";
+    if (match) visible++;
+  });
+  const meta = $("#view-meta");
+  if (q && meta && meta.dataset.base) {
+    meta.textContent = `${meta.dataset.base} · showing ${visible} of ${total}`;
+  } else if (meta && meta.dataset.base) {
+    meta.textContent = meta.dataset.base;
+  }
+}
+
+function selectNone() {
+  $$(".row-check").forEach(c => { c.checked = false; c.closest("tr").classList.remove("selected"); });
+  const h = $("#header-check"); if (h) h.checked = false;
+  updateActionBar();
+}
+
+function getSelected() {
+  return $$(".row-check:checked").map(c => ({
+    sender: c.closest("tr").dataset.sender,
+    count: parseInt(c.closest("tr").dataset.count, 10),
+  }));
+}
+
+function updateActionBar() {
+  const sel = getSelected();
+  const bar = $("#action-bar");
+  if (sel.length === 0) { bar.classList.remove("show"); return; }
+  const total = sel.reduce((a, s) => a + s.count, 0);
+  $("#action-count").textContent = `${sel.length} sender${sel.length === 1 ? "" : "s"} · ${total.toLocaleString()} message${total === 1 ? "" : "s"}`;
+  bar.classList.add("show");
+  // Update row visual state
+  $$(".row-check").forEach(c => c.closest("tr").classList.toggle("selected", c.checked));
+}
+
+// Per-row actions
+async function oneUnsub(senderEnc) {
+  const sender = decodeURIComponent(senderEnc);
+  const ok = await confirmModal("Unsubscribe", `Send an unsubscribe request to ${sender}?`, false, "Unsubscribe");
+  if (!ok) return;
+  toast(`Unsubscribing from ${sender}…`);
+  try {
+    const r = await fetch("/api/unsubscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders: [sender] }) });
+    const data = await r.json();
+    const result = (data.results || [])[0] || {};
+    if (result.success) toast(`Unsubscribed from ${sender} via ${result.method}. Labeled ${data.labeled} messages.`, "success");
+    else toast(`${sender}: ${result.method || "no method"} failed — ${result.detail || ""}`, "error");
+    loadCounts();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function oneTrash(senderEnc, count) {
+  const sender = decodeURIComponent(senderEnc);
+  const ok = await confirmModal("Move to trash", `Move all ${count} messages from ${sender} to trash?\n\nRecoverable from Trash for 30 days.`, true, "Move to trash");
+  if (!ok) return;
+  toast(`Trashing ${count} messages…`);
+  try {
+    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders: [sender] }) });
+    const data = await r.json();
+    toast(`Trashed ${data.trashed} messages from ${sender}.`, "success");
+    rescan();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+// Bulk actions
+async function bulkUnsub() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const ok = await confirmModal(
+    "Unsubscribe in bulk",
+    `Send unsubscribe requests to ${senders.length} senders.\n\nThis can take 1-3 minutes for large batches.`,
+    false, "Unsubscribe"
+  );
+  if (!ok) return;
+  toast(`Unsubscribing from ${senders.length} senders… stay on this page.`);
+  try {
+    const r = await fetch("/api/unsubscribe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    const okCount = (data.results || []).filter(x => x.success).length;
+    toast(`Unsubscribed: ${okCount}/${data.results.length}. Labeled ${data.labeled} messages with gmail-mgr/unsubscribed.`, "success");
+    loadCounts();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function bulkTrash() {
+  const sel = getSelected();
+  if (!sel.length) return;
+  const senders = sel.map(s => s.sender);
+  const total = sel.reduce((a, s) => a + s.count, 0);
+  const ok = await confirmModal(
+    "Move to trash in bulk",
+    `Move ${total.toLocaleString()} messages from ${senders.length} senders to trash?\n\nRecoverable from Trash for 30 days.`,
+    true, "Move to trash"
+  );
+  if (!ok) return;
+  toast(`Trashing ${total} messages…`);
+  try {
+    const r = await fetch("/api/delete-senders", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ senders }) });
+    const data = await r.json();
+    toast(`Trashed ${data.trashed} messages.`, "success");
+    rescan();
+  } catch (e) { toast(`Error: ${e.message}`, "error"); }
+}
+
+async function emptyTrash() {
+  const ok = await confirmModal(
+    "Empty trash permanently",
+    "This permanently deletes everything in your Gmail trash. This action cannot be undone.",
+    true, "Permanently delete"
+  );
+  if (!ok) return;
+  toast("Emptying trash…");
+  $("#empty-trash-btn").disabled = true;
+  try {
+    const r = await fetch("/api/empty-trash", { method: "POST" });
+    if (!r.ok) throw new Error(`Server returned ${r.status}. If this is the first permanent-delete after a scope change, restart the server and re-auth.`);
+    const data = await r.json();
+    toast(`Permanently deleted ${data.deleted.toLocaleString()} messages from trash.`, "success");
+    loadCounts();
+    if (currentQuery === "in:trash") rescan();
+  } catch (e) {
+    toast(`Error: ${e.message}`, "error");
+  } finally {
+    $("#empty-trash-btn").disabled = false;
+  }
+}
+
+// Wire up sidebar nav
+$$(".nav-item").forEach(btn => {
+  btn.addEventListener("click", () => {
+    setActiveNav(btn);
+    scan();
+  });
+});
+
+// Custom query input
+$("#custom-query").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const q = e.target.value.trim();
+    if (!q) return;
+    $$(".nav-item").forEach(n => n.classList.remove("active"));
+    currentQuery = q;
+    currentTitle = `Custom: ${q}`;
+    $("#view-title").textContent = currentTitle;
+    scan();
+  }
+});
+
+// Modal: ESC closes
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("#modal-backdrop").classList.contains("show")) {
+    resolveModal(false);
+  }
+});
+
+// Boot
+loadProfile();
+loadCounts();
+scan();
+</script>
+</body>
+</html>
