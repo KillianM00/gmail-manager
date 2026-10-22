@@ -1,5 +1,7 @@
 # gmail-manager
 
+[![Tests](https://github.com/KillianM00/gmail-manager/actions/workflows/test.yml/badge.svg)](https://github.com/KillianM00/gmail-manager/actions/workflows/test.yml)
+
 A local-first tool for taking control of a Gmail account: bulk-delete by query
 or sender, run a real RFC 8058 unsubscribe sweep across every list you're on,
 archive / mark-read / restore in bulk, and clear out trash without clicking
