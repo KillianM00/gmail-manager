@@ -5,13 +5,14 @@ or sender, run a real RFC 8058 unsubscribe sweep across every list you're on,
 archive / mark-read / restore in bulk, and clear out trash without clicking
 through Google's UI a hundred times.
 
-Comes with both a CLI and a small web GUI that runs on `localhost`. Your data
-never leaves your machine — it talks straight to the Gmail API with an OAuth
-token cached on your filesystem.
+Includes a CLI and a web GUI that runs on `localhost`. The application stores
+its OAuth configuration, token cache, and subscription registry locally. It
+communicates with Google's Gmail API and, when an unsubscribe action is requested,
+with the relevant mailing-list endpoints or email addresses.
 
 ---
 
-## Get started in 60 seconds
+## Quick start
 
 ```bash
 pip install gmail-manager
@@ -28,8 +29,8 @@ pip install -e .          # or: uv sync
 gmail-mgr setup
 ```
 
-`gmail-mgr setup` is an **interactive wizard** that handles the entire
-first-run experience for you. It will:
+`gmail-mgr setup` is an **interactive wizard** for first-time configuration.
+Allow time to create a Google Cloud OAuth client and complete consent. It will:
 
 1. **Detect every browser installed on your machine** (Chrome, Edge, Firefox,
    Brave, Arc, Opera, Safari) and ask which one you want gmail-mgr to use.
