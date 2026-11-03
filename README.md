@@ -1,18 +1,23 @@
-# gmail-manager
+# Gmail Manager — OAuth Automation and Local API Tooling
 
-[![Tests](https://github.com/KillianM00/gmail-manager/actions/workflows/test.yml/badge.svg)](https://github.com/KillianM00/gmail-manager/actions/workflows/test.yml)
+**Python · FastAPI · Click · Google OAuth · Gmail API**
 
-A local-first tool for taking control of a Gmail account: bulk-delete by query
-or sender, run a real RFC 8058 unsubscribe sweep across every list you're on,
-archive / mark-read / restore in bulk, and clear out trash without clicking
-through Google's UI a hundred times.
+A Gmail management application with a command-line interface and local web UI. It combines OAuth authentication, batch mailbox operations, unsubscribe handling, and a local subscription registry behind reusable Python services.
 
-Includes a CLI and a web GUI that runs on `localhost`. The application stores
-its OAuth configuration, token cache, and subscription registry locally. It
-communicates with Google's Gmail API and, when an unsubscribe action is requested,
-with the relevant mailing-list endpoints or email addresses.
+## Engineering focus
 
----
+- **API integration:** OAuth token management and Gmail query/batch operations connect user intent to remote mailbox actions.
+- **Protocol handling:** RFC 8058 one-click unsubscribe and configurable fallback methods handle multiple subscription formats.
+- **Shared application services:** Click commands and FastAPI routes expose the same core operations while local configuration and registry data remain outside source control.
+
+## Evidence and scope
+
+Mailbox mutations require the user’s Google authorization and affect real account data. Preview queries before destructive operations. OAuth files and local registry data must remain private. The November 2026 unit run passed 12 tests; no live mailbox mutations were performed.
+
+## Source guide
+
+- [Application source](gmail_mgr)
+- [Unit tests](tests)
 
 ## Quick start
 
@@ -57,7 +62,7 @@ To redo OAuth later: delete `~/.gmail-mgr/token.json` and run any command.
 
 ---
 
-## What it does
+## Operations
 
 - **Group senders** — scan any Gmail query (Inbox, last year, a label, anything)
   and see who is actually filling your mailbox. Rank by **message count** or
